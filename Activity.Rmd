@@ -1,0 +1,86 @@
+---
+title: "QSAR Analysis"
+output: html_document
+---
+
+```{r}
+start <- function(pkg){
+  npkg <- pkg[!(pkg %in% installed.packages()[,"Package"])]
+  if (length(npkg))
+    install.packages(npkg, dependencies = TRUE)
+  lapply(pkg, require, character.only=TRUE)
+}
+
+pkgs <- c("QSARdata",'caret','ggplot2','pls')
+start(pkgs)
+```
+
+
+## Load data
+
+```{r}
+data(AquaticTox)
+head(AquaticTox_Outcome)
+descriptors<-AquaticTox_QuickProp
+data<-cbind(descriptors,AquaticTox_Outcome$Activity)
+head(data)
+dim(data)
+colnames(data)[51]<- "Activity"
+sum(is.na(data))
+```
+
+## Cleaning
+```{r}
+data<-na.omit(data)
+
+descs <- data[, !apply(data, 2, function(x) any(is.na(x)) )]
+
+descs <- descs[, !apply( descs, 2, function(x) length(unique(x)) == 1 )]
+
+r2 <- which(cor(descs[2:50])^2 > .29, arr.ind=TRUE)
+
+r2 <- r2[ r2[,1] > r2[,2] , ]
+d <- descs[, -unique(r2[,2])]
+```
+
+
+## Preprocessing
+```{r}
+Tran <- preProcess(d[,-1],method = "BoxCox")
+data <-predict(Tran,d[,-1])
+
+ind<-sample(2,nrow(data),replace=TRUE,prob=c(0.8,0.2))
+training<-data[ind==1,-1]
+test<-data[ind==2,-1]
+```
+
+
+## Linear least squares
+```{r}
+lm.fit <- lm(Activity ~., data = training)
+summary(lm.fit)
+names(lm.fit)
+coef(lm.fit)
+confint(lm.fit)
+predict(lm.fit, test, interval = "confidence")  # or interval = "prediction"
+
+plot(predict(lm.fit), residuals(lm.fit))
+plot(predict(lm.fit), rstudent(lm.fit))
+plot(hatvalues(lm.fit))
+which.max(hatvalues(lm.fit))
+```
+
+
+## PLS
+```{r}
+pls.fit <- plsr(Activity ~., data = training, scale = TRUE, validation = "CV")
+summary(pls.fit) # The lowest cross-validation error occurs when M=5
+validationplot(pls.fit, val.type = "MSEP")
+pls.pred <- predict(pls.fit, test, ncomp = 5)
+mean((pls.pred-test$Activity)^2)
+
+pls.all <- plsr(Activity ~., data = data, scale = TRUE, ncomp = 5)
+summary(pls.all)
+```
+
+
